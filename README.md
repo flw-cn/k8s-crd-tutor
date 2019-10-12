@@ -36,3 +36,16 @@
 
 注意在 `main.go` 中有一些 `// +kubebuilder:....` 格式的注释，这些注释是一些特殊的占位符，
 将会在编译环节自动生成更多的代码。
+
+## 等等，先讲一些概念
+
+当我们谈论 K8S 中的 API 时，有四个重要的概念需要先了解一下：
+
+* **Group**，就是一组 API 的集合
+* **Version**，每个 Group 都有若干个 Version，随着时间的推移，Version 会越来越多。
+* **Kind**，每一组 API 的每个版本都包含了一个或者多个数据类型，称之为 Kind。随着版本的变化，Kind 可能会产生不同的变种，
+  但任何一个变种都应当能够包含所有其它变种的所有数据，这样即使是旧的 API，也不会遗失或者破坏新的数据。
+* **Resource**，Resource 只是 API 中对 Kind 的使用。通常 Kind 和 Resource 总是一一对应，命名上 Kind 习惯首字母大写，而 Resource 是对应的全小写版本。
+  不过也有例外，有时候多个不同的 Resource 可能会返回相同的 Kind。
+
+在 Go 语言中，Group-Version-Kind 的组合经常称之为 **GVK**，而 Group-Version-Resouce 的组合则称之为 **GVR**。
