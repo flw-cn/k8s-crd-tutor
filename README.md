@@ -49,3 +49,58 @@
   不过也有例外，有时候多个不同的 Resource 可能会返回相同的 Kind。
 
 在 Go 语言中，Group-Version-Kind 的组合经常称之为 **GVK**，而 Group-Version-Resouce 的组合则称之为 **GVR**。
+
+## 第三步，添加一个 API
+
+通过运行下面的命令，可以添加一个新的 Kind：
+
+```
+kubebuilder create api --group batch --version v1 --kind CronJob
+```
+
+运行完上面的命令之后，会产生如下变化：
+
+```
+ M        PROJECT
+ A        api/v1/cronjob_types.go
+          api/v1/zz_generated.deepcopy.go
+ A        api/v1/groupversion_info.go
+ A        config/crd/kustomization.yaml
+ A        config/crd/kustomizeconfig.yaml
+ A        config/crd/patches/cainjection_in_cronjobs.yaml
+ A        config/crd/patches/webhook_in_cronjobs.yaml
+ A        config/samples/batch_v1_cronjob.yaml
+ A        controllers/cronjob_controller.go
+ A        controllers/suite_test.go
+ M        go.mod
+ M        main.go
+```
+
+主要有三类变化：
+
+* api/v1 下有三个文件，其中 cronjob_types.go 需要我们自己填充内容，另外两个不用管。
+* 生成了一个 controller 框架，这个也需要我们完善。
+* yaml 暂时也不用管。
+
+### CronJob Kind
+
+Kind 都在 api/v1/cronjob_types.go 文件中，其中有四个数据类型：
+
+* CronJob 代表单数的 CronJob 对象，也就是我们将要实现的计划任务
+* CronJobList 代表复数的 CronJob 对象，里面包含多个 CronJob
+* CronJobSpec 代表计划任务的预期状态
+* CronJobStatus 代表计划任务的实际状态
+
+在 K8S 中，控制器主要是通过比对预期状态和实际状态的差别，来形成指令。
+
+### CronJob 控制器
+
+每个控制器都负责维护一个对象，通过比较预期状态和实际状态，来触发具体的动作，
+这个过程称之为「协调」，相对应的数据类型叫做「协调器」。
+
+kubebuilder 为我们生成了协调器的框架代码，主要包括：
+
+* 数据类型定义
+* 两个主要的方法： Reconcile 和 SetupWithManager
+
+接下来我们就去完善它们。
