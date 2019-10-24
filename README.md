@@ -104,3 +104,114 @@ kubebuilder 为我们生成了协调器的框架代码，主要包括：
 * 两个主要的方法： Reconcile 和 SetupWithManager
 
 接下来我们就去完善它们。
+
+## 第四步，设计 API
+
+### 一些基本规则
+
+* 所有的序列化字段都必须为小骆驼风格（camelCase），可以通过 struct tag 来指定。
+* 空的字段可以通过 omitempty 来忽略
+* 大多数字段都使用 Go 原生的基础类型。整数是个例外，有三种类型: int32/int64/resource.Quantity
+
+### CronJobSpec 结构
+
+CronJob 主要包含两个信息：
+
+* 时间表
+* 运行作业的模板
+
+还有一些细节需要考虑：
+
+* 开始工作的截止日期（如果我们错过这个截止日期，我们将等到下一个预定时间）
+* 如果一次运行多个作业该怎么办（我们要等待吗？停止旧的吗？同时运行两个？）
+* 万一出问题了，一种暂停 CronJob 运行的方法
+* 旧工作记录的限制
+
+所有这些最终形成以下数据类型：
+
+```go
+type CronJobSpec struct {
+	// +kubebuilder:validation:MinLength=0
+	Schedule string `json:"schedule"`
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	StartingDeadlineSeconds *int64 `json:"startingDeadlineSeconds,omitempty"`
+	// +optional
+	ConcurrencyPolicy ConcurrencyPolicy `json:"concurrencyPolicy,omitempty"`
+	// +optional
+	Suspend *bool `json:"suspend,omitempty"`
+	JobTemplate batchv1beta1.JobTemplateSpec `json:"jobTemplate"`
+
+	// +kubebuilder:validation:Minimum=0
+
+	// +optional
+	SuccessfulJobsHistoryLimit *int32 `json:"successfulJobsHistoryLimit,omitempty"`
+
+	// +kubebuilder:validation:Minimum=0
+
+	// +optional
+	FailedJobsHistoryLimit *int32 `json:"failedJobsHistoryLimit,omitempty"`
+}
+```
+
+其中的注释具有特别的含义，会通过代码生成器生成其它的元数据。
+
+### CronJobStatus 结构
+
+这个结构相对来说要简单一些，只包含两项内容就可以了：
+
+* 当前活动的 job
+* job 上一次激活的时间
+
+```Go
+type CronJobStatus struct {
+    // +optional
+    Active []corev1.ObjectReference `json:"active,omitempty"`
+    // +optional
+    LastScheduleTime *metav1.Time `json:"lastScheduleTime,omitempty"`
+}
+```
+
+### CronJob 和 CronJobList
+
+这两个不用改。
+
+## 第五步，实现控制器
+
+控制器的 Reconcile 方法主要实现了以下几个步骤：
+
+1. 按名称加载 CronJob
+
+```Go
+var cronJob batch.CronJob
+err := r.Get(ctx, req.NamespacedName, &cronJob)
+```
+
+协调器需要先从上下文中按名字加载 CronJob 对象的内容。这个可以通过调用客户端的 Get 方法来完成。
+因为协调器对象已经是一个客户端对象了，因此直接用协调器对象调用就可以了。
+
+2. 列出所有的任务，并更新状态
+
+```Go
+var childJobs kbatch.JobList
+err := r.List(ctx, &childJobs, client.InNamespace(req.Namespace), client.MatchingField(jobOwnerKey, req.Name))
+```
+
+这里用 r.List 方法来完成任务。由于 r.List 返回的任务包含了所有不同状态的，
+所以接下来需要把它们按照状态分开，分成活动的、成功的、失败的，并计算上一次运行任务是什么时候。
+
+3. 清理历史记录和历史任务
+
+4. 检查对象是否被挂起
+
+```Go
+if cronJob.Spec.Suspend != nil && *cronJob.Spec.Suspend {
+```
+
+这样就可以通过编辑 CRD Spec 里的 Suspend 字段，就可以暂停计划任务的执行。
+
+5. 如果没有暂停，就需要计算下一次运行的时间
+
+6. 根据计算好的时间，启动一个新的任务
+
+7. 返回协调后的结果
